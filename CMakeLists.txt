@@ -28,7 +28,7 @@ add_library(hana INTERFACE)
 target_include_directories(hana INTERFACE ${SOURCE_DIR}/include)
 
 ExternalProject_Add(install-CallableTraits EXCLUDE_FROM_ALL 1
-    URL https://github.com/badair/callable_traits/archive/develop.zip
+    URL https://github.com/badair/callable_traits/archive/master.zip
     TIMEOUT 120
     PREFIX "${CMAKE_CURRENT_BINARY_DIR}/dependencies/callable_traits"
     CONFIGURE_COMMAND "" # Disable configure step
