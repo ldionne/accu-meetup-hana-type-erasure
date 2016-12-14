@@ -44,17 +44,175 @@ https://a9.com/careers
 
 ==============================================================================
 
+### What is type erasure?
 
+----
 
-==============================================================================
+### Let's consider the following problem
 
-# Thank you
+```c++
+struct MatchingRange {
+  boost::iterator_range<???> get() const {
+    if (is_contiguous_) {
+      boost::counting_iterator<int> first{contiguous_.first},
+                                    last{contiguous_.second};
+      return {first, last};
+    } else {
+      return {matches_.begin(), matches_.end()};
+    }
+  }
 
-<span class="fragment fade-in">
-http://ldionne.com <br>
-http://github.com/boostorg/hana
-</span>
+private:
+  bool is_contiguous_;
+  std::vector<int> matches_;
+  std::pair<int, int> contiguous_;
+};
+```
 
+====
+
+### A few possibilities: `variant`
+
+```c++
+std::variant<
+  boost::iterator_range<boost::counting_iterator<int>>,
+  boost::iterator_range<std::vector<int>::iterator>
+> get() const {
+  ...
+}
+```
+
+----
+
+### Need to visit every time
+
+```c++
+MatchingRange range{...};
+auto variant = range.get();
+std::visit([](auto const& r) {
+  for (int i : r)
+    std::cout << i << std::endl;
+}, variant);
+```
+
+====
+
+### Use a callback
+
+```c++
+template <typename Callback>
+void get(Callback f) const {
+  if (is_contiguous_) {
+    for (int i = contiguous_.first; i < contiguous_.second; ++i) {
+      f(i);
+    }
+  } else {
+    for (int i : matches_)
+      f(i);
+  }
+}
+```
+
+----
+
+### Ugly and inflexible
+
+```c++
+MatchingRange range{...};
+range.get([](int i) {
+  std::cout << i << std::endl;
+});
+```
+
+====
+
+### Use inheritance!
+
+```c++
+std::pair<std::unique_ptr<MatchIterator>> get() const {
+  if (is_contiguous_) {
+    ContiguousIterator first{contiguous_.first},
+                       last{contiguous_.second};
+    return {std::make_unique<ContiguousIterator>(first),
+            std::make_unique<ContiguousIterator>(last)};
+  } else {
+    NonContiguousIterator first{matches_.begin()},
+                          last{matches_.end()};
+    return {std::make_unique<NonContiguousIterator>(first),
+            std::make_unique<NonContiguousIterator>(last)};
+  }
+}
+```
+
+----
+
+### Need to define all these iterators (or ranges)
+
+```c++
+struct MatchIterator {
+  virtual MatchIterator& operator++() = 0;
+  // ...
+};
+
+struct ContiguousIterator : MatchIterator {
+  virtual MatchIterator& operator++() override { ... };
+  // ...
+};
+
+struct NonContiguousIterator : MatchIterator {
+  virtual MatchIterator& operator++() override { ... };
+  // ...
+};
+```
+
+----
+
+### Everything becomes a pointer and goes to the heap
+
+----
+
+### Leads to dubious inheritance relationships
+
+====
+
+### This is where type erasure comes in handy
+
+```c++
+boost::iterator_range<any_iterator<int>> get() const {
+  if (is_contiguous_) {
+    boost::counting_iterator<int> f{contiguous_.first},
+                                  l{contiguous_.second};
+    any_iterator<int> first{f}, last{l};
+    return {first, last};
+  } else {
+    any_iterator<int> first{matches_.begin()}, last{matches_.end()};
+    return {first, last};
+  }
+}
+```
+
+----
+
+### `any_iterator<int>` is a type erased interface
+
+----
+
+### There are many libraries that tackle this problem
+
+- Boost.TypeErasure
+- EraserFace
+- liberasure
+- Emtypen
+
+<!-- TODO: Add links -->
+
+----
+
+### I created yet another one
+
+====
+
+### Demo time, all hell will break loose
 
                 </script>
                 </section>
