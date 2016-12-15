@@ -16,14 +16,6 @@ grunt serve &
 
 and then connect to `localhost:8000` to view locally.
 
-## Building the code samples
-
-```sh
-(mkdir build && cd build && cmake ..)
-cmake --build build install-dependencies
-cmake --build build
-```
-
 <!-- Links -->
 [ACCU Meetup]: https://www.meetup.com/ACCU-Bay-Area/events/233766721/
 [reveal.js]: https://github.com/hakimel/reveal.js
