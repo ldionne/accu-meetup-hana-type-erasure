@@ -261,9 +261,9 @@ private:
   Vtable const* vtable_; // pointer to vtable
   Vtable vtable_;        // actual table embedded in object
 
+  te::heap_storage storage_;     // always on the heap
   te::local_storage<8> storage_; // on the stack
   te::small_buffer<16> storage_; // on the stack, heap fallback
-  te::heap_storage storage_;     // always on the heap
 };
 ```
 
