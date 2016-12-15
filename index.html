@@ -216,14 +216,21 @@ private:
 
 ----
 
-### There's really two components to dynamic polymorphism
+### Basically two components to dynamic polymorphism
 
 ----
 
 ### Polymorphic dispatch (usually implemented as vtables)
 
 ```c++
-decltype(Iterator<Value&>.vtable) const* vtable_;
+template <typename Value, typename Category>
+struct any_iterator {
+  using iterator_category = Category;
+  // ...
+
+private:
+  decltype(Iterator<Value&>.vtable) const* vtable_; // <--- THIS
+};
 ```
 
 ----
@@ -231,7 +238,14 @@ decltype(Iterator<Value&>.vtable) const* vtable_;
 ### Polymorphic storage (usually a pointer)
 
 ```c++
-te::heap_storage storage_;
+template <typename Value, typename Category>
+struct any_iterator {
+  using iterator_category = Category;
+  // ...
+
+private:
+  te::heap_storage storage_;                        // <--- THIS
+};
 ```
 
 ----
@@ -315,7 +329,7 @@ auto const Iterator_vtable<T, std::enable_if_t<
 
 ----
 
-### I mentioned Hana in the title just for the hype
+### I mentioned it in the title just for the hype
 
 ----
 
