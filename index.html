@@ -51,21 +51,21 @@ https://a9.com/careers
 ### Let's consider the following problem
 
 ```c++
-struct MatchingRange {
+struct IntegerRange {
   boost::iterator_range<???> get() const {
     if (is_contiguous_) {
-      boost::counting_iterator<int> first{contiguous_.first},
-                                    last{contiguous_.second};
+      boost::counting_iterator<int> first{bounds_.first},
+                                    last{bounds_.second};
       return {first, last};
     } else {
-      return {matches_.begin(), matches_.end()};
+      return {all_.begin(), all_.end()};
     }
   }
 
 private:
   bool is_contiguous_;
-  std::vector<int> matches_;
-  std::pair<int, int> contiguous_;
+  std::pair<int, int> bounds_;
+  std::vector<int> all_;
 };
 ```
 
@@ -87,7 +87,7 @@ std::variant<
 ### Need to visit every time
 
 ```c++
-MatchingRange range{...};
+IntegerRange range{...};
 auto variant = range.get();
 std::visit([](auto const& r) {
   for (int i : r)
@@ -97,47 +97,18 @@ std::visit([](auto const& r) {
 
 ====
 
-### Use a callback
-
-```c++
-template <typename Callback>
-void get(Callback f) const {
-  if (is_contiguous_) {
-    for (int i = contiguous_.first; i < contiguous_.second; ++i) {
-      f(i);
-    }
-  } else {
-    for (int i : matches_)
-      f(i);
-  }
-}
-```
-
-----
-
-### Ugly and inflexible
-
-```c++
-MatchingRange range{...};
-range.get([](int i) {
-  std::cout << i << std::endl;
-});
-```
-
-====
-
 ### Use inheritance!
 
 ```c++
-std::pair<std::unique_ptr<MatchIterator>> get() const {
+std::pair<std::unique_ptr<MatchIterator>, ...> get() const {
   if (is_contiguous_) {
-    ContiguousIterator first{contiguous_.first},
-                       last{contiguous_.second};
+    ContiguousIterator first{bounds_.first},
+                       last{bounds_.second};
     return {std::make_unique<ContiguousIterator>(first),
             std::make_unique<ContiguousIterator>(last)};
   } else {
-    NonContiguousIterator first{matches_.begin()},
-                          last{matches_.end()};
+    NonContiguousIterator first{all_.begin()},
+                          last{all_.end()};
     return {std::make_unique<NonContiguousIterator>(first),
             std::make_unique<NonContiguousIterator>(last)};
   }
@@ -149,18 +120,18 @@ std::pair<std::unique_ptr<MatchIterator>> get() const {
 ### Need to define all these iterators (or ranges)
 
 ```c++
-struct MatchIterator {
-  virtual MatchIterator& operator++() = 0;
+struct RangeIterator {
+  virtual RangeIterator& operator++() = 0;
   // ...
 };
 
-struct ContiguousIterator : MatchIterator {
-  virtual MatchIterator& operator++() override { ... };
+struct ContiguousIterator : RangeIterator {
+  virtual RangeIterator& operator++() override { ... };
   // ...
 };
 
-struct NonContiguousIterator : MatchIterator {
-  virtual MatchIterator& operator++() override { ... };
+struct NonContiguousIterator : RangeIterator {
+  virtual RangeIterator& operator++() override { ... };
   // ...
 };
 ```
@@ -180,20 +151,16 @@ struct NonContiguousIterator : MatchIterator {
 ```c++
 boost::iterator_range<any_iterator<int>> get() const {
   if (is_contiguous_) {
-    boost::counting_iterator<int> f{contiguous_.first},
-                                  l{contiguous_.second};
+    boost::counting_iterator<int> f{bounds_.first},
+                                  l{bounds_.second};
     any_iterator<int> first{f}, last{l};
     return {first, last};
   } else {
-    any_iterator<int> first{matches_.begin()}, last{matches_.end()};
+    any_iterator<int> first{all_.begin()}, last{all_.end()};
     return {first, last};
   }
 }
 ```
-
-----
-
-### `any_iterator<int>` is a type erased interface
 
 ----
 
@@ -212,7 +179,150 @@ boost::iterator_range<any_iterator<int>> get() const {
 
 ====
 
-### Demo time, all hell will break loose
+### The gist of it
+
+```c++
+template <typename Value, typename Category>
+struct any_iterator {
+  using iterator_category = Category;
+  // ...
+
+  template <typename It>
+  explicit any_iterator(It it)
+    : vtable_{&erased_iterator_vtable_for<It>}
+    , storage_{te::type_info_for<It>}
+  { /* ... */ }
+
+  any_iterator& operator++() {
+    (*vtable_)["increment"_s](storage_.get());
+    return *this;
+  }
+
+  Value& operator*() {
+    return (*vtable_)["dereference"_s](storage_.get());
+  }
+
+private:
+  decltype(Iterator<Value&>.vtable) const* vtable_;
+  te::heap_storage storage_;
+};
+```
+
+----
+
+### There's really two components to dynamic polymorphism
+
+----
+
+### Polymorphic dispatch (usually implemented as vtables)
+
+```c++
+decltype(Iterator<Value&>.vtable) const* vtable_;
+```
+
+----
+
+### Polymorphic storage (usually a pointer)
+
+```c++
+te::heap_storage storage_;
+```
+
+----
+
+### But we can do more
+
+```c++
+template <typename Value, typename Category>
+struct any_iterator {
+  // ...
+private:
+  using Vtable = decltype(Iterator<Value&>.vtable);
+  Vtable const* vtable_; // pointer to vtable
+  Vtable vtable_;        // actual table embedded in object
+
+  te::local_storage<8> storage_; // on the stack
+  te::small_buffer<16> storage_; // on the stack, heap fallback
+  te::heap_storage storage_;     // always on the heap
+};
+```
+
+====
+
+### But where do the vtables come from?
+
+```c++
+template <typename Reference>
+constexpr auto Iterator = te::requires(
+  "increment"_s = te::function<void (te::T&)>,
+  "dereference"_s = te::function<Reference (te::T&)>,
+  "equal"_s = te::function<bool (te::T const&, te::T const&)>
+  // ...
+);
+```
+
+----
+
+### Actually, we can reuse vtables
+
+```c++
+template <typename Reference>
+constexpr auto Iterator = te::requires(
+  CopyConstructible,
+  CopyAssignable,
+  Destructible,
+  Swappable,
+  "increment"_s = te::function<void (te::T&)>,
+  "dereference"_s = te::function<Reference (te::T&)>,
+  "equal"_s = te::function<bool (te::T const&, te::T const&)>
+);
+```
+
+----
+
+### Concept maps are used to fill vtables
+
+```c++
+template <typename T>
+auto const Iterator_vtable<T, std::enable_if_t<
+  is_a_random_access_iterator<T>{}
+>> = te::make_vtable(
+  "increment"_s = [](T& self) {
+    ++self;
+  },
+
+  "dereference"_s = [](T& self) -> decltype(auto) {
+    return *self;
+  },
+
+  "equal"_s = [](T const& a, T const& b) {
+    return a == b;
+  }
+
+  // ...
+);
+```
+
+====
+
+### Hana is used under the hood
+
+----
+
+### I mentioned Hana in the title just for the hype
+
+----
+
+### Implementation soon to be published on GitHub
+
+----
+
+# Thank you
+
+<span class="fragment fade-in">
+http://ldionne.com <br>
+http://github.com/boostorg/hana
+</span>
 
                 </script>
                 </section>
