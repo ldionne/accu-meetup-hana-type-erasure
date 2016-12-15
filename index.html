@@ -78,7 +78,13 @@ std::variant<
   boost::iterator_range<boost::counting_iterator<int>>,
   boost::iterator_range<std::vector<int>::iterator>
 > get() const {
-  ...
+  if (is_contiguous_) {
+    boost::counting_iterator<int> first{bounds_.first},
+                                  last{bounds_.second};
+    return {first, last};
+  } else {
+    return {all_.begin(), all_.end()};
+  }
 }
 ```
 
